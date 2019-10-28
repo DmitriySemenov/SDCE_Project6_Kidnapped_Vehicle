@@ -20,6 +20,7 @@
 
 using std::string;
 using std::vector;
+using std::normal_distribution;
 
 void ParticleFilter::init(double x, double y, double theta, double std[]) {
   /**
@@ -30,8 +31,31 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
    * NOTE: Consult particle_filter.h for more information about this method 
    *   (and others in this file).
    */
-  num_particles = 0;  // TODO: Set the number of particles
 
+  num_particles = 1000;  // TODO: Set the number of particles
+	
+	// Creates random generator engine
+	std::default_random_engine gen;
+
+	// Creates a normal (Gaussian) distribution for x,y, and theta
+	normal_distribution<double> dist_x(x, std[0]);
+	normal_distribution<double> dist_y(y, std[1]);
+	normal_distribution<double> dist_theta(theta, std[2]);
+
+	for (int i = 0; i < num_particles; ++i) {
+		Particle temp_part;
+		temp_part.id = i;
+		temp_part.weight = (double)1.0;
+		// Sample from normal distributions using:
+		// x = dist_x(gen);
+		temp_part.x = dist_x(gen);
+		temp_part.y = dist_y(gen);
+		temp_part.theta = dist_theta(gen);
+		
+		particles.push_back(temp_part);
+		weights.push_back(temp_part.weight);
+	}
+	is_initialized = true;
 }
 
 void ParticleFilter::prediction(double delta_t, double std_pos[], 
@@ -43,7 +67,24 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
    *  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
    *  http://www.cplusplus.com/reference/random/default_random_engine/
    */
+	
+	// Creates random generator engine
+	std::default_random_engine gen;
 
+	for (int i = 0; i < num_particles; ++i) {
+		// Calculates new x,y, and theta for a given particle
+		double x = 0;
+		double y = 0;
+		double theta = 0;
+		// Creates a normal (Gaussian) distribution for x,y, and theta
+		normal_distribution<double> dist_x(x, std_pos[0]);
+		normal_distribution<double> dist_y(y, std_pos[1]);
+		normal_distribution<double> dist_theta(theta, std_pos[2]);
+		// Update particles's predicted x,y,theta values with Gaussian noise applied
+		particles[i].x = dist_x(gen);
+		particles[i].y = dist_y(gen);
+		particles[i].theta = dist_theta(gen);
+	}
 }
 
 void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted, 

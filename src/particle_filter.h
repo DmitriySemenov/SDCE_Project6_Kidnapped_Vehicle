@@ -108,6 +108,9 @@ class ParticleFilter {
   std::string getAssociations(Particle best);
   std::string getSenseCoord(Particle best, std::string coord);
 
+	double multiv_prob(double sig_x, double sig_y, double x_obs, double y_obs,
+		double mu_x, double mu_y);
+
   // Set of current particles
   std::vector<Particle> particles;
 

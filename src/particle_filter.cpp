@@ -21,6 +21,8 @@
 using std::string;
 using std::vector;
 using std::normal_distribution;
+using std::discrete_distribution;
+using std::uniform_real_distribution;
 
 void ParticleFilter::init(double x, double y, double theta, double std[]) {
   /**
@@ -148,8 +150,8 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	// For all particles
 	for (int i = 0; i < num_particles; ++i) {
 		// Local variables for particle
-		double x = particles[i].x;
-		double y = particles[i].y;
+		double xp = particles[i].x;
+		double yp = particles[i].y;
 		double theta = particles[i].theta;
 		// Vector of predicted landmarks within sensor range
 		vector<LandmarkObs> predicted;
@@ -164,7 +166,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
 			// Find which landmarks are within sensor range 
 			// by checking distance between particle location and landmark location
-			if (dist(x, y, (double)lmrk_x, (double)lmrk_y) < sensor_range) {
+			if (dist(xp, yp, (double)lmrk_x, (double)lmrk_y) < sensor_range) {
 				// Create LandmarkObs variable with the current landmark's data
 				LandmarkObs inrange_landmark;
 				inrange_landmark.id = lmrk_id;
@@ -176,11 +178,52 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		}
 
 		// Convert observations from vehicle coordinates to map coordinates.
+		vector<LandmarkObs> observations_map;
+		for (int k = 0; k < observations.size(); ++k) {
+			LandmarkObs obs_map;
+			double xc = observations[k].x;
+			double yc = observations[k].y;
+
+			obs_map.id = observations[k].id;
+			obs_map.x = xp + (cos(theta) * xc) - (sin(theta) * yc);
+			obs_map.y = yp + (sin(theta) * xc) - (cos(theta) * yc);
+
+			observations_map.push_back(obs_map);
+		}
+		
 		// Use dataAssociation() function to associate observations with predicted landmarks.
-		// Create associations, sense_x, and sense_y vectors using converted observations.
+		dataAssociation(predicted, observations_map);
+
+		// Create associations, sense_x, and sense_y vectors using observations converted to map coordinates.
+		vector<int> associations;
+		vector<double> sense_x;
+		vector<double> sense_y;
+		for (int k = 0; k < observations_map.size(); ++k) {
+			associations.push_back(observations_map[k].id);
+			sense_x.push_back(observations_map[k].x);
+			sense_y.push_back(observations_map[k].y);
+		}
+
 		// Use SetAssociations() and above vectors to update current particle.
+		SetAssociations(particles[i], associations, sense_x, sense_y);
+		
 		// Calculate weight for each observation using multiv_prob().
 		// Calculate final particle weight by multiplying all weights together.
+		double weight = 1;
+		for (int k = 0; k < observations_map.size(); ++k) {
+			int lmrk_idx = observations_map[k].id - 1;
+			//Protect for when particles go out of range
+			if (lmrk_idx < 0) {
+				weight = -1;
+				break;
+			}
+			double obs_x = observations_map[k].x;
+			double obs_y = observations_map[k].y;
+			double lmrk_x = map_landmarks.landmark_list[lmrk_idx].x_f;
+			double lmrk_y = map_landmarks.landmark_list[lmrk_idx].y_f;
+			weight *= multiv_prob(std_landmark[0], std_landmark[1], obs_x, obs_y, lmrk_x, lmrk_y);
+		}
+		particles[i].weight = weight;
 	}
 	
 }
@@ -193,6 +236,46 @@ void ParticleFilter::resample() {
    *   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
    */
 
+	 // Creates random generator engine
+	std::default_random_engine gen;
+	// Distributions for integer and real numbers
+	discrete_distribution<int> discr_dist(0, num_particles - 1);
+	uniform_real_distribution<double> real_dist(0.0, 1.0);
+
+	// generate random starting index for resampling wheel
+	int index = discr_dist(gen);
+
+	// Initialize beta to 0
+	double beta = 0;
+
+	// New particles vector
+	vector<Particle> new_particles;
+
+	// Assign all particle weights to a weights vector and find maximum
+	double max_w = -1;
+	for (int i = 0; i < num_particles; ++i) {
+		weights[i] = particles[i].weight;
+		if (particles[i].weight > max_w) {
+			max_w = particles[i].weight;
+		}
+	}
+
+	// Resampling wheel
+	for (int i = 0; i < num_particles; ++i) {
+		beta += real_dist(gen) * 2 * max_w;
+		while (beta > weights[index]) {
+			beta -= weights[index];
+			if (index == num_particles - 1) {
+				index = 0;
+			}
+			else {
+				index = index + 1;
+			}
+		}
+		new_particles.push_back(particles[index]);
+	}
+
+	particles = new_particles;
 }
 
 void ParticleFilter::SetAssociations(Particle& particle, 
@@ -235,7 +318,7 @@ string ParticleFilter::getSenseCoord(Particle best, string coord) {
 }
 
 
-double multiv_prob(double sig_x, double sig_y, double x_obs, double y_obs,
+double ParticleFilter::multiv_prob(double sig_x, double sig_y, double x_obs, double y_obs,
 	double mu_x, double mu_y) {
 	// calculate normalization term
 	double gauss_norm;

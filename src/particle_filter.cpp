@@ -21,7 +21,7 @@
 using std::string;
 using std::vector;
 using std::normal_distribution;
-using std::discrete_distribution;
+using std::uniform_int_distribution;
 using std::uniform_real_distribution;
 
 void ParticleFilter::init(double x, double y, double theta, double std[]) {
@@ -34,7 +34,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
    *   (and others in this file).
    */
 
-  num_particles = 100;  // TODO: Set the number of particles
+  num_particles = 80;  // TODO: Set the number of particles
 	
 	// Creates random generator engine
 	std::default_random_engine gen;
@@ -79,7 +79,7 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
 		double y = 0;
 		double theta = 0;
 		// Check for yaw_rate and decide which equations to use
-		if (yaw_rate == 0) {
+		if (fabs(yaw_rate) < 0.0001) {
 			x = particles[i].x + velocity * delta_t * cos(particles[i].theta);
 			y = particles[i].y + velocity * delta_t * sin(particles[i].theta);
 			theta = particles[i].theta;
@@ -186,7 +186,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
 			obs_map.id = observations[k].id;
 			obs_map.x = xp + (cos(theta) * xc) - (sin(theta) * yc);
-			obs_map.y = yp + (sin(theta) * xc) - (cos(theta) * yc);
+			obs_map.y = yp + (sin(theta) * xc) + (cos(theta) * yc);
 
 			observations_map.push_back(obs_map);
 		}
@@ -211,16 +211,25 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 		// Calculate final particle weight by multiplying all weights together.
 		double weight = 1;
 		for (int k = 0; k < observations_map.size(); ++k) {
-			int lmrk_idx = observations_map[k].id - 1;
+			double obs_x = observations_map[k].x;
+			double obs_y = observations_map[k].y;
+			int obs_id = observations_map[k].id;
+			double lmrk_x = 0, lmrk_y = 0;
+
 			//Protect for when particles go out of range
-			if (lmrk_idx < 0) {
+			if (obs_id == -1) {
 				weight = -1;
 				break;
 			}
-			double obs_x = observations_map[k].x;
-			double obs_y = observations_map[k].y;
-			double lmrk_x = map_landmarks.landmark_list[lmrk_idx].x_f;
-			double lmrk_y = map_landmarks.landmark_list[lmrk_idx].y_f;
+
+			// get the x,y coordinates of the predicted landmark associated with the current observation
+			for (int l = 0; l < predicted.size(); ++l) {
+				if (predicted[l].id == obs_id) {
+					lmrk_x = predicted[l].x;
+					lmrk_y = predicted[l].y;
+				}
+			}
+
 			weight *= multiv_prob(std_landmark[0], std_landmark[1], obs_x, obs_y, lmrk_x, lmrk_y);
 		}
 		particles[i].weight = weight;
@@ -239,7 +248,7 @@ void ParticleFilter::resample() {
 	 // Creates random generator engine
 	std::default_random_engine gen;
 	// Distributions for integer and real numbers
-	discrete_distribution<int> discr_dist(0, num_particles - 1);
+	uniform_int_distribution<int> discr_dist(0, num_particles - 1);
 	uniform_real_distribution<double> real_dist(0.0, 1.0);
 
 	// generate random starting index for resampling wheel
@@ -262,7 +271,8 @@ void ParticleFilter::resample() {
 
 	// Resampling wheel
 	for (int i = 0; i < num_particles; ++i) {
-		beta += real_dist(gen) * 2 * max_w;
+		double zero_to_one = real_dist(gen);
+		beta += zero_to_one * 2 * max_w;
 		while (beta > weights[index]) {
 			beta -= weights[index];
 			if (index == num_particles - 1) {
